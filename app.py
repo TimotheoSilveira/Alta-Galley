@@ -147,11 +147,28 @@ def upload_to_google_drive(file_bytes, filename):
         return None
 
 # ===== INICIALIZAR SESSION STATE =====
+
+# Carregar ou criar usuários
+if not Path(USERS_FILE).exists():
+    # Se não existir, criar com admin padrão
+    initial_users = [
+        {
+            "id": 1000,
+            "name": "Timotheo Admin",
+            "email": "timotheo@altagenetics.com",
+            "password": "admin123",
+            "role": "admin"
+        }
+    ]
+    with open(USERS_FILE, "w", encoding="utf-8") as f:
+        json.dump(initial_users, f, ensure_ascii=False, indent=2)
+    st.session_state.users = initial_users
+else:
+    st.session_state.users = load_users()
+
+# Carregar touros
 if "bulls" not in st.session_state:
     st.session_state.bulls = load_bulls()
-
-if "users" not in st.session_state:
-    st.session_state.users = load_users()
 
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
@@ -194,7 +211,7 @@ with st.sidebar:
 
     if not st.session_state.logged_in:
         st.markdown("**Login para gerenciar dados**")
-        st.info("📧 **E-mail padrão:** timotheo@altagenetics.com\n\n🔑 **Senha padrão:** admin123")
+       
 
         email = st.text_input("E-mail", placeholder="timotheo@altagenetics.com", key="login_email")
         password = st.text_input("Senha", type="password", key="login_password")
