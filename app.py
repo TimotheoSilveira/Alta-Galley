@@ -5,7 +5,7 @@ from datetime import datetime
 from pathlib import Path
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload, MediaIoBaseUpload
+from googleapiclient.http import MediaIoBaseUpload
 import io
 
 # ===== CONFIGURAÇÃO =====
@@ -17,11 +17,11 @@ st.set_page_config(
 )
 
 # ===== CONFIGURAÇÃO GOOGLE DRIVE =====
-GOOGLE_DRIVE_FOLDER_ID = "1HV2Vx93Pwcljccm1mrMNtUyIuo8n8t-f"  # ← SEU ID AQUI
+GOOGLE_DRIVE_FOLDER_ID = "1HV2Vx93Pwcljccm1mrMNtUyIuo8n8t-f"
 
 BULLS_FILE = "bulls_data.json"
 USERS_FILE = "users_data.json"
-CREDENTIALS_FILE = "credentials.json"  # Arquivo JSON do Google
+CREDENTIALS_FILE = "credentials.json"
 
 # ===== DADOS INICIAIS =====
 initial_bulls = [
@@ -47,39 +47,59 @@ initial_bulls = [
     }
 ]
 
+initial_users = [
+    {
+        "id": 1000,
+        "name": "Timotheo Admin",
+        "email": "timotheo@altagenetics.com",
+        "password": "admin123",
+        "role": "admin"
+    }
+]
+
 # ===== FUNÇÕES DE ARMAZENAMENTO LOCAL =====
 def load_bulls():
     try:
         if Path(BULLS_FILE).exists():
             with open(BULLS_FILE, "r", encoding="utf-8") as f:
                 return json.load(f)
-    except:
-        pass
+    except Exception as e:
+        st.error(f"Erro ao carregar touros: {e}")
     return initial_bulls
 
 def save_bulls():
-    with open(BULLS_FILE, "w", encoding="utf-8") as f:
-        json.dump(st.session_state.bulls, f, ensure_ascii=False, indent=2)
+    try:
+        with open(BULLS_FILE, "w", encoding="utf-8") as f:
+            json.dump(st.session_state.bulls, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        st.error(f"Erro ao salvar touros: {e}")
 
 def load_users():
     try:
         if Path(USERS_FILE).exists():
             with open(USERS_FILE, "r", encoding="utf-8") as f:
                 return json.load(f)
-    except:
-        pass
-    return []
+    except Exception as e:
+        st.error(f"Erro ao carregar usuários: {e}")
+
+    # Se não existir, criar com admin padrão
+    save_users_to_file(initial_users)
+    return initial_users
+
+def save_users_to_file(users):
+    try:
+        with open(USERS_FILE, "w", encoding="utf-8") as f:
+            json.dump(users, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        st.error(f"Erro ao salvar usuários: {e}")
 
 def save_users():
-    with open(USERS_FILE, "w", encoding="utf-8") as f:
-        json.dump(st.session_state.users, f, ensure_ascii=False, indent=2)
+    save_users_to_file(st.session_state.users)
 
 # ===== FUNÇÕES GOOGLE DRIVE =====
 def get_google_drive_service():
-    """Retorna o serviço Google Drive autenticado"""
     try:
         if not Path(CREDENTIALS_FILE).exists():
-            st.error("Arquivo credentials.json não encontrado!")
             return None
 
         credentials = Credentials.from_service_account_file(
@@ -89,15 +109,12 @@ def get_google_drive_service():
         service = build('drive', 'v3', credentials=credentials)
         return service
     except Exception as e:
-        st.error(f"Erro ao conectar Google Drive: {e}")
         return None
 
 def upload_to_google_drive(file_bytes, filename):
-    """Faz upload de arquivo para Google Drive"""
     try:
         service = get_google_drive_service()
         if not service:
-            st.warning("Google Drive não disponível. Usando URL local.")
             return None
 
         file_metadata = {
@@ -119,17 +136,14 @@ def upload_to_google_drive(file_bytes, filename):
 
         file_id = file.get('id')
 
-        # Tornar arquivo público
         service.permissions().create(
             fileId=file_id,
             body={'type': 'anyone', 'role': 'reader'}
         ).execute()
 
-        # Retornar link direto
         return f"https://drive.google.com/uc?id={file_id}&export=download"
 
     except Exception as e:
-        st.warning(f"Erro ao fazer upload: {e}")
         return None
 
 # ===== INICIALIZAR SESSION STATE =====
@@ -180,31 +194,33 @@ with st.sidebar:
 
     if not st.session_state.logged_in:
         st.markdown("**Login para gerenciar dados**")
+        st.info("📧 **E-mail padrão:** timotheo@altagenetics.com\n\n🔑 **Senha padrão:** admin123")
 
-        email = st.text_input("E-mail", placeholder="seu.nome@altagenetics.com", key="login_email")
+        email = st.text_input("E-mail", placeholder="timotheo@altagenetics.com", key="login_email")
         password = st.text_input("Senha", type="password", key="login_password")
 
         if st.button("🔓 Acessar", use_container_width=True):
             email = email.strip().lower()
 
             if not email.endswith("@altagenetics.com"):
-                st.error("Use e-mail @altagenetics.com")
+                st.error("❌ Use e-mail @altagenetics.com")
             elif not password:
-                st.error("Preencha a senha")
+                st.error("❌ Preencha a senha")
             else:
                 user = next((u for u in st.session_state.users if u["email"] == email), None)
 
                 if user and user["password"] != password:
-                    st.error("Senha incorreta")
+                    st.error("❌ Senha incorreta")
                 elif user:
                     st.session_state.logged_in = True
                     st.session_state.user_email = email
                     st.session_state.user_name = user["name"]
                     st.session_state.user_role = user["role"]
-                    st.success("Login realizado!")
+                    st.success("✅ Login realizado!")
                     st.rerun()
                 else:
-                    st.info("Usuário não encontrado.")
+                    st.error("❌ Usuário não encontrado")
+                    st.info(f"Usuários cadastrados: {len(st.session_state.users)}")
     else:
         st.success(f"✅ **{st.session_state.user_name}**")
         st.markdown(f"**Papel:** {st.session_state.user_role.upper()}")
