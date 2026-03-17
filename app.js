@@ -1,3 +1,346 @@
+const BULLS_KEY = "alta-lineage-webapp-data-v4";
+const USERS_KEY = "alta-lineage-users-v1";
+const SESSION_KEY = "alta-lineage-session-v4";
+
+const ROLES = {
+  VIEWER: "viewer",
+  EDITOR: "editor",
+  ADMIN: "admin"
+};
+
+const initialBulls = [
+  {
+    id: 1,
+    name: "Super Bull 001",
+    code: "SB001",
+    breed: "Holandês",
+    category: "Leite",
+    description: "Excelente produção de leite e conformação.",
+    bullImage: "https://images.unsplash.com/photo-1517849845537-4d257902454a?auto=format&fit=crop&w=900&q=80",
+    daughters: [
+      {
+        id: 101,
+        cowName: "Vaca 4021",
+        farm: "Fazenda Boa Vista",
+        location: "Varginha / MG",
+        milk: "42 kg/dia",
+        lactation: "2ª lactação",
+        image: "https://images.unsplash.com/photo-1516467508483-a7212febe31a?auto=format&fit=crop&w=1200&q=80"
+      }
+    ]
+  },
+  {
+    id: 2,
+    name: "Alta Prime 245",
+    code: "AP245",
+    breed: "Jersey",
+    category: "Sólidos",
+    description: "Destaque para sólidos, fertilidade e vacas funcionais.",
+    bullImage: "https://images.unsplash.com/photo-1493962853295-0fd70327578a?auto=format&fit=crop&w=900&q=80",
+    daughters: []
+  }
+];
+
+const state = {
+  loggedIn: false,
+  email: "",
+  userName: "",
+  userRole: ROLES.VIEWER,
+  query: "",
+  breedFilter: "Todas as raças",
+  selectedBullId: null,
+  previewPhoto: null,
+  showAddBull: false,
+  showAddPhoto: false,
+  showRegister: false,
+  showEditBullPhoto: false,
+  showExport: false,
+  showManageUsers: false,
+  mobileMenuOpen: false,
+  exportSelection: [],
+  bulls: loadBulls(),
+  users: loadUsers()
+};
+
+init();
+
+function init() {
+  loadSession();
+  render();
+}
+
+function clone(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function loadBulls() {
+  try {
+    const raw = localStorage.getItem(BULLS_KEY);
+    return raw ? JSON.parse(raw) : clone(initialBulls);
+  } catch {
+    return clone(initialBulls);
+  }
+}
+
+function saveBulls() {
+  localStorage.setItem(BULLS_KEY, JSON.stringify(state.bulls));
+}
+
+function loadUsers() {
+  try {
+    const raw = localStorage.getItem(USERS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveUsers() {
+  localStorage.setItem(USERS_KEY, JSON.stringify(state.users));
+}
+
+function loadSession() {
+  try {
+    const raw = sessionStorage.getItem(SESSION_KEY);
+    if (!raw) return;
+    const session = JSON.parse(raw);
+    state.loggedIn = !!session.loggedIn;
+    state.email = session.email || "";
+    state.userName = session.userName || "";
+    state.userRole = session.userRole || ROLES.VIEWER;
+  } catch {}
+}
+
+function saveSession() {
+  sessionStorage.setItem(SESSION_KEY, JSON.stringify({
+    loggedIn: state.loggedIn,
+    email: state.email,
+    userName: state.userName,
+    userRole: state.userRole
+  }));
+}
+
+function canEdit() {
+  return state.userRole === ROLES.EDITOR || state.userRole === ROLES.ADMIN;
+}
+
+function canManageUsers() {
+  return state.userRole === ROLES.ADMIN;
+}
+
+function getSelectedBull() {
+  return state.bulls.find((item) => item.id === state.selectedBullId) || null;
+}
+
+function getBreeds() {
+  return ["Todas as raças", ...new Set(state.bulls.map((bull) => bull.breed))];
+}
+
+function getFilteredBulls() {
+  return state.bulls.filter((bull) => {
+    const haystack = `${bull.name} ${bull.code} ${bull.category} ${bull.breed}`.toLowerCase();
+    const matchesQuery = haystack.includes(state.query.toLowerCase());
+    const matchesBreed = state.breedFilter === "Todas as raças" || bull.breed === state.breedFilter;
+    return matchesQuery && matchesBreed;
+  });
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&")
+    .replaceAll("<", "<")
+    .replaceAll(">", ">")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function escapeAttr(value) {
+  return escapeHtml(value);
+}
+
+function render() {
+  const app = document.getElementById("app");
+  app.innerHTML = state.loggedIn ? renderDashboard() : renderLogin();
+  bindEvents();
+}
+
+function renderLogin() {
+  return `
+    <div class="login-page compact-login-page">
+      <div class="login-compact-card">
+        <div class="login-compact-brand brand-lockup">
+          <img src="assets/alta-symbol.png" alt="Alta symbol" />
+          <div class="brand-title">
+            <small>Alta Genetics</small>
+            <strong>Alta Gallery</strong>
+          </div>
+        </div>
+        <h1>Entrar no Alta Gallery</h1>
+        <p class="subtext">Acesso liberado para e-mails com final @altagenetics.com</p>
+        <form id="login-form" class="form-card compact-form-card">
+          <div id="login-error"></div>
+          <div class="field">
+            <label>E-mail corporativo</label>
+            <input name="email" type="email" placeholder="seu.nome@altagenetics.com" required />
+          </div>
+          <div class="field">
+            <label>Senha</label>
+            <input name="password" type="password" placeholder="Digite sua senha" required />
+          </div>
+          <button class="primary-btn full-width" type="submit">Acessar</button>
+          <button class="link-btn" type="button" data-action="open-register">Criar cadastro</button>
+        </form>
+      </div>
+      ${renderRegisterModal()}
+    </div>
+  `;
+}
+
+function renderRegisterModal() {
+  return `
+    <div class="modal-backdrop ${state.showRegister ? "show" : ""}" id="register-modal">
+      <div class="modal small">
+        <div class="modal-header">
+          <h3 class="modal-title">Criar cadastro</h3>
+          <button class="close-btn" data-action="close-register">×</button>
+        </div>
+        <div class="modal-body">
+          <form id="register-form">
+            <div id="register-error"></div>
+            <div class="field">
+              <label>Nome</label>
+              <input name="name" placeholder="Seu nome" required />
+            </div>
+            <div class="field">
+              <label>E-mail corporativo</label>
+              <input name="email" type="email" placeholder="seu.nome@altagenetics.com" required />
+            </div>
+            <div class="grid-2">
+              <div class="field">
+                <label>Senha</label>
+                <input name="password" type="password" required />
+              </div>
+              <div class="field">
+                <label>Confirmar senha</label>
+                <input name="confirmPassword" type="password" required />
+              </div>
+            </div>
+            <button class="primary-btn full-width" type="submit">Salvar cadastro</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderDashboard() {
+  const filteredBulls = getFilteredBulls();
+  const breeds = getBreeds();
+  const totalPhotos = state.bulls.reduce((acc, bull) => acc + (bull.daughters?.length || 0), 0);
+  const selectedBull = getSelectedBull();
+  const displayUser = state.userName || state.email || "Usuário Alta";
+
+  return `
+    <div class="page-shell">
+      <header class="app-header">
+        <div class="container">
+          <div class="header-row">
+            <div class="brand-lockup">
+              <img src="assets/alta-symbol.png" alt="Alta symbol" />
+              <div class="brand-title">
+                <small>Alta Genetics</small>
+                <strong>Alta Gallery</strong>
+              </div>
+            </div>
+            <div class="header-actions">
+              <div class="user-email">${escapeHtml(displayUser)} <span class="role-badge">${state.userRole.toUpperCase()}</span></div>
+              ${canEdit() ? `<button class="primary-btn" data-action="open-add-bull">+ Adicionar Touro</button>` : ''}
+              <button class="secondary-btn" data-action="open-export">Exportar</button>
+              ${canManageUsers() ? `<button class="secondary-btn" data-action="open-manage-users">Gerenciar Usuários</button>` : ''}
+              <button class="outline-btn" data-action="logout">Sair</button>
+            </div>
+            <button class="outline-btn mobile-actions-toggle" data-action="toggle-mobile-menu">☰</button>
+          </div>
+        </div>
+      </header>
+
+      <main class="container page-content">
+        <section class="hero-row">
+          <div>
+            <h1>Touros Cadastrados</h1>
+            <p>Gerencie e visualize a progênie dos touros Alta Genetics.</p>
+          </div>
+          <div class="stats-grid">
+            <div class="stat-card"><span>Touros</span><strong>${state.bulls.length}</strong></div>
+            <div class="stat-card"><span>Raças</span><strong>${Math.max(breeds.length - 1, 0)}</strong></div>
+            <div class="stat-card"><span>Fotos</span><strong>${totalPhotos}</strong></div>
+          </div>
+        </section>
+
+        <section class="filters-row">
+          <div class="search-box">
+            <span>🔎</span>
+            <input id="search-input" type="text" placeholder="Buscar por nome ou código do touro..." value="${escapeAttr(state.query)}" />
+          </div>
+          <select id="breed-filter" class="filter-select">
+            ${breeds.map(breed => `<option value="${escapeAttr(breed)}" ${breed === state.breedFilter ? "selected" : ""}>${escapeHtml(breed)}</option>`).join("")}
+          </select>
+        </section>
+
+        <section class="cards-grid">
+          ${filteredBulls.map(renderBullCard).join("")}
+        </section>
+
+        ${filteredBulls.length === 0 ? `<div class="empty-state">Nenhum touro encontrado com esse filtro.</div>` : ""}
+      </main>
+
+      ${canEdit() ? renderAddBullModal() : ''}
+      ${renderBullModal(selectedBull)}
+      ${canEdit() ? renderEditBullPhotoModal(selectedBull) : ''}
+      ${canEdit() ? renderAddPhotoModal(selectedBull) : ''}
+      ${renderPhotoPreviewModal()}
+      ${renderExportModal()}
+      ${canManageUsers() ? renderManageUsersModal() : ''}
+    </div>
+  `;
+}
+
+function renderBullCard(bull) {
+  const actions = canEdit() ? `
+    <button class="outline-btn" data-action="open-bull" data-id="${bull.id}">Abrir galeria</button>
+    <button class="danger-btn" data-action="delete-bull" data-id="${bull.id}">Excluir</button>
+  ` : `
+    <button class="outline-btn" data-action="open-bull" data-id="${bull.id}">Abrir galeria</button>
+  `;
+
+  return `
+    <article class="bull-card">
+      <div class="bull-card-top with-image">
+        <div class="bull-thumb ${bull.bullImage ? "" : "empty"}">
+          ${bull.bullImage ? `<img src="${escapeAttr(bull.bullImage)}" alt="${escapeAttr(bull.name)}" />` : `<span>Sem foto</span>`}
+        </div>
+        <div class="bull-card-main">
+          <div class="bull-card-headline">
+            <div>
+              <h3 class="bull-name">${escapeHtml(bull.name)}</h3>
+              <div class="bull-code">Código: ${escapeHtml(bull.code)}</div>
+            </div>
+            <div class="badge">${escapeHtml(bull.breed)}</div>
+          </div>
+          <p class="bull-description">${escapeHtml(bull.description || "Sem descrição genética cadastrada.")}</p>
+        </div>
+      </div>
+      <div class="card-divider"></div>
+      <div class="bull-card-bottom">
+        <span>${bull.daughters.length} fotos de filhas</span>
+        <div class="card-actions">
+          ${actions}
+        </div>
+      </div>
+    </article>
+  `;
+}
+
 function getBreeds() {
   return ["Todas as raças", ...new Set(state.bulls.map((bull) => bull.breed))];
 }
