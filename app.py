@@ -3,8 +3,10 @@ import json
 import pandas as pd
 from datetime import datetime
 from pathlib import Path
+import base64
+from io import BytesIO
 
-# ===== CONFIGURAÇÃO DA PÁGINA =====
+# ===== CONFIGURAÇÃO =====
 st.set_page_config(
     page_title="Alta Gallery",
     page_icon="🐄",
@@ -12,18 +14,10 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# ===== ESTILOS CUSTOMIZADOS =====
-st.markdown("""
-<style>
-    .main { padding: 2rem; }
-    .stTabs [data-baseweb="tab-list"] button { font-size: 16px; }
-</style>
-""", unsafe_allow_html=True)
-
-# ===== DADOS INICIAIS =====
 BULLS_FILE = "bulls_data.json"
 USERS_FILE = "users_data.json"
 
+# ===== DADOS INICIAIS =====
 initial_bulls = [
     {
         "id": 1,
@@ -63,32 +57,26 @@ def load_bulls():
         if Path(BULLS_FILE).exists():
             with open(BULLS_FILE, "r", encoding="utf-8") as f:
                 return json.load(f)
-    except Exception as e:
-        st.warning(f"Erro ao carregar touros: {e}")
+    except:
+        pass
     return initial_bulls
 
 def save_bulls():
-    try:
-        with open(BULLS_FILE, "w", encoding="utf-8") as f:
-            json.dump(st.session_state.bulls, f, ensure_ascii=False, indent=2)
-    except Exception as e:
-        st.error(f"Erro ao salvar touros: {e}")
+    with open(BULLS_FILE, "w", encoding="utf-8") as f:
+        json.dump(st.session_state.bulls, f, ensure_ascii=False, indent=2)
 
 def load_users():
     try:
         if Path(USERS_FILE).exists():
             with open(USERS_FILE, "r", encoding="utf-8") as f:
                 return json.load(f)
-    except Exception as e:
-        st.warning(f"Erro ao carregar usuários: {e}")
+    except:
+        pass
     return []
 
 def save_users():
-    try:
-        with open(USERS_FILE, "w", encoding="utf-8") as f:
-            json.dump(st.session_state.users, f, ensure_ascii=False, indent=2)
-    except Exception as e:
-        st.error(f"Erro ao salvar usuários: {e}")
+    with open(USERS_FILE, "w", encoding="utf-8") as f:
+        json.dump(st.session_state.users, f, ensure_ascii=False, indent=2)
 
 # ===== INICIALIZAR SESSION STATE =====
 if "bulls" not in st.session_state:
@@ -132,43 +120,42 @@ def can_edit():
 def can_manage_users():
     return st.session_state.user_role == "admin"
 
-# ===== SIDEBAR - LOGIN ADMIN =====
+# ===== SIDEBAR - LOGIN =====
 with st.sidebar:
-    st.markdown("## 🔐 Área do Administrador")
+    st.markdown("## 🔐 Área Restrita")
 
     if not st.session_state.logged_in:
         st.markdown("**Login para gerenciar dados**")
 
-        with st.form("admin_login"):
-            email = st.text_input("E-mail corporativo", placeholder="seu.nome@altagenetics.com")
-            password = st.text_input("Senha", type="password")
+        email = st.text_input("E-mail", placeholder="seu.nome@altagenetics.com", key="login_email")
+        password = st.text_input("Senha", type="password", key="login_password")
 
-            if st.form_submit_button("🔓 Acessar como Admin"):
-                email = email.strip().lower()
+        if st.button("🔓 Acessar", use_container_width=True):
+            email = email.strip().lower()
 
-                if not email.endswith("@altagenetics.com"):
-                    st.error("Use um e-mail com final @altagenetics.com")
-                elif not password:
-                    st.error("Preencha a senha")
+            if not email.endswith("@altagenetics.com"):
+                st.error("Use e-mail @altagenetics.com")
+            elif not password:
+                st.error("Preencha a senha")
+            else:
+                user = next((u for u in st.session_state.users if u["email"] == email), None)
+
+                if user and user["password"] != password:
+                    st.error("Senha incorreta")
+                elif user:
+                    st.session_state.logged_in = True
+                    st.session_state.user_email = email
+                    st.session_state.user_name = user["name"]
+                    st.session_state.user_role = user["role"]
+                    st.success("Login realizado!")
+                    st.rerun()
                 else:
-                    user = next((u for u in st.session_state.users if u["email"] == email), None)
-
-                    if user and user["password"] != password:
-                        st.error("Senha incorreta")
-                    elif user:
-                        st.session_state.logged_in = True
-                        st.session_state.user_email = email
-                        st.session_state.user_name = user["name"]
-                        st.session_state.user_role = user["role"]
-                        st.success("Login realizado!")
-                        st.rerun()
-                    else:
-                        st.info("Usuário não encontrado. Solicite acesso ao administrador.")
+                    st.info("Usuário não encontrado. Solicite acesso ao admin.")
     else:
-        st.success(f"✅ Conectado como: **{st.session_state.user_name}**")
+        st.success(f"✅ **{st.session_state.user_name}**")
         st.markdown(f"**Papel:** {st.session_state.user_role.upper()}")
 
-        if st.button("🚪 Sair"):
+        if st.button("🚪 Sair", use_container_width=True):
             st.session_state.logged_in = False
             st.session_state.user_email = ""
             st.session_state.user_name = ""
@@ -180,28 +167,26 @@ st.markdown("# 🐄 Alta Gallery")
 st.markdown("Galeria de touros e progênie Alta Genetics")
 st.divider()
 
-# Estatísticas (visível para TODOS)
+# ===== ESTATÍSTICAS (VISÍVEL PARA TODOS) =====
 col1, col2, col3 = st.columns(3)
-
 with col1:
-    st.metric("Touros Cadastrados", len(st.session_state.bulls))
-
+    st.metric("Touros", len(st.session_state.bulls))
 with col2:
-    breeds = get_breeds()
-    st.metric("Raças", len(breeds) - 1)
-
+    st.metric("Raças", len(get_breeds()) - 1)
 with col3:
     total_photos = sum(len(bull["daughters"]) for bull in st.session_state.bulls)
-    st.metric("Fotos de Filhas", total_photos)
+    st.metric("Fotos", total_photos)
 
 st.divider()
 
-# Filtros (visível para TODOS)
+# ===== FILTROS (VISÍVEL PARA TODOS) =====
 col1, col2 = st.columns([3, 1])
 with col1:
     st.session_state.search_query = st.text_input("🔎 Buscar por nome ou código", st.session_state.search_query)
 with col2:
-    st.session_state.breed_filter = st.selectbox("Filtrar por raça", get_breeds(), index=0)
+    st.session_state.breed_filter = st.selectbox("Filtrar por raça", get_breeds())
+
+st.divider()
 
 # ===== ABAS =====
 if st.session_state.logged_in and can_edit():
@@ -211,13 +196,14 @@ elif st.session_state.logged_in and can_manage_users():
 else:
     tab1 = st.tabs(["📊 Galeria"])[0]
 
+# ===== TAB 1: GALERIA =====
 with tab1:
     st.markdown("## Touros Cadastrados")
 
     filtered_bulls = get_filtered_bulls()
 
     if not filtered_bulls:
-        st.info("Nenhum touro encontrado com esse filtro.")
+        st.info("Nenhum touro encontrado.")
     else:
         for bull in filtered_bulls:
             with st.container(border=True):
@@ -247,7 +233,6 @@ with tab1:
                         with col_edit:
                             if st.button(f"✏️ Editar", key=f"edit_{bull['id']}"):
                                 st.session_state.edit_bull_id = bull["id"]
-                                st.rerun()
 
                         with col_delete:
                             if st.button(f"🗑️ Excluir", key=f"delete_{bull['id']}"):
@@ -256,6 +241,52 @@ with tab1:
                                 st.success("Touro excluído!")
                                 st.rerun()
 
+        # Visualizar galeria de um touro
+        if "selected_bull_id" in st.session_state and st.session_state.selected_bull_id:
+            bull = next((b for b in st.session_state.bulls if b["id"] == st.session_state.selected_bull_id), None)
+
+            if bull:
+                st.divider()
+                st.markdown(f"## Galeria de {bull['name']}")
+
+                if st.button("← Voltar"):
+                    st.session_state.selected_bull_id = None
+                    st.rerun()
+
+                if can_edit():
+                    if st.button(f"➕ Adicionar foto de filha"):
+                        st.session_state.add_photo_bull_id = bull["id"]
+
+                if bull["daughters"]:
+                    cols = st.columns(3)
+                    for idx, photo in enumerate(bull["daughters"]):
+                        with cols[idx % 3]:
+                            st.image(photo["image"], use_container_width=True)
+                            st.markdown(f"**{photo['cowName']}**")
+                            st.markdown(f"🏠 {photo['farm']}")
+                            st.markdown(f"📍 {photo['location']}")
+                            if photo.get("milk"):
+                                st.markdown(f"🥛 {photo['milk']}")
+
+                            col_download, col_delete = st.columns(2)
+                            with col_download:
+                                st.download_button(
+                                    "📥 Baixar",
+                                    data=photo["image"],
+                                    file_name=f"{photo['cowName']}.jpg",
+                                    key=f"download_{photo['id']}"
+                                )
+                            if can_edit():
+                                with col_delete:
+                                    if st.button("🗑️", key=f"delete_photo_{photo['id']}"):
+                                        bull["daughters"] = [p for p in bull["daughters"] if p["id"] != photo["id"]]
+                                        save_bulls()
+                                        st.success("Foto excluída!")
+                                        st.rerun()
+                else:
+                    st.info("Nenhuma foto cadastrada.")
+
+# ===== TAB 2: ADICIONAR TOURO =====
 if st.session_state.logged_in and can_edit():
     with tab2:
         st.markdown("## Adicionar Novo Touro")
@@ -269,7 +300,7 @@ if st.session_state.logged_in and can_edit():
                 breed = st.selectbox("Raça", ["Holandês", "Jersey", "Girolando", "Gir Leiteiro"])
 
             with col2:
-                category = st.text_input("Categoria (ex: Leite, Sólidos)")
+                category = st.text_input("Categoria")
                 description = st.text_area("Descrição genética")
 
             bull_image_url = st.text_input("URL da foto do touro")
@@ -288,11 +319,13 @@ if st.session_state.logged_in and can_edit():
                     }
                     st.session_state.bulls.insert(0, new_bull)
                     save_bulls()
-                    st.success("Touro adicionado com sucesso!")
+                    st.success("Touro adicionado!")
                     st.rerun()
                 else:
-                    st.error("Preencha nome e código do touro")
+                    st.error("Preencha nome e código")
 
+# ===== TAB 3: IMPORTAR =====
+if st.session_state.logged_in and can_edit():
     with tab3:
         st.markdown("## Importar Base em JSON")
 
@@ -304,13 +337,15 @@ if st.session_state.logged_in and can_edit():
                 if isinstance(imported_data, list):
                     st.session_state.bulls = imported_data
                     save_bulls()
-                    st.success("Base importada com sucesso!")
+                    st.success("Base importada!")
                     st.rerun()
                 else:
-                    st.error("Arquivo JSON inválido. Deve ser uma lista de touros.")
+                    st.error("JSON inválido")
             except Exception as e:
-                st.error(f"Erro ao importar: {e}")
+                st.error(f"Erro: {e}")
 
+# ===== TAB 4: EXPORTAR =====
+if st.session_state.logged_in and can_edit():
     with tab4:
         st.markdown("## Exportar Base")
 
@@ -319,7 +354,7 @@ if st.session_state.logged_in and can_edit():
         with col1:
             json_str = json.dumps(st.session_state.bulls, ensure_ascii=False, indent=2)
             st.download_button(
-                "📥 Exportar Base Completa (JSON)",
+                "📥 Exportar JSON",
                 json_str,
                 "alta-gallery-dados.json",
                 "application/json"
@@ -331,34 +366,34 @@ if st.session_state.logged_in and can_edit():
                     "Nome": bull["name"],
                     "Código": bull["code"],
                     "Raça": bull["breed"],
-                    "Categoria": bull["category"],
                     "Fotos": len(bull["daughters"])
                 }
                 for bull in st.session_state.bulls
             ])
             csv = bulls_df.to_csv(index=False)
             st.download_button(
-                "📊 Exportar como CSV",
+                "📊 Exportar CSV",
                 csv,
                 "alta-gallery-dados.csv",
                 "text/csv"
             )
 
+# ===== TAB 5: GERENCIAR =====
+if st.session_state.logged_in and can_edit():
     with tab5:
         st.markdown("## Gerenciar Dados")
 
-        if st.button("🔄 Resetar todos os dados"):
+        if st.button("🔄 Resetar dados"):
             if st.checkbox("Confirmar reset"):
                 st.session_state.bulls = initial_bulls
                 save_bulls()
                 st.success("Dados resetados!")
                 st.rerun()
 
+# ===== TAB 4: GERENCIAR USUÁRIOS (ADMIN) =====
 if st.session_state.logged_in and can_manage_users():
     with tab4:
         st.markdown("## Gerenciar Usuários")
-
-        st.markdown("### Usuários Cadastrados")
 
         for user in st.session_state.users:
             col1, col2, col3 = st.columns([2, 1, 1])
@@ -389,7 +424,7 @@ if st.session_state.logged_in and can_manage_users():
 
         with st.form("new_user_form"):
             name = st.text_input("Nome completo")
-            email = st.text_input("E-mail corporativo", placeholder="seu.nome@altagenetics.com")
+            email = st.text_input("E-mail", placeholder="seu.nome@altagenetics.com")
             password = st.text_input("Senha", type="password")
             role = st.selectbox("Papel", ["viewer", "editor", "admin"])
 
@@ -399,9 +434,9 @@ if st.session_state.logged_in and can_manage_users():
                 if not name or not email or not password:
                     st.error("Preencha todos os campos")
                 elif not email.endswith("@altagenetics.com"):
-                    st.error("Use um e-mail com final @altagenetics.com")
+                    st.error("Use e-mail @altagenetics.com")
                 elif any(u["email"] == email for u in st.session_state.users):
-                    st.error("Este e-mail já está cadastrado")
+                    st.error("E-mail já cadastrado")
                 else:
                     st.session_state.users.append({
                         "id": int(datetime.now().timestamp() * 1000),
@@ -414,6 +449,8 @@ if st.session_state.logged_in and can_manage_users():
                     st.success(f"Usuário {name} criado como {role}!")
                     st.rerun()
 
+# ===== TAB 5: PAINEL ADMIN =====
+if st.session_state.logged_in and can_manage_users():
     with tab5:
         st.markdown("## Painel de Administração")
 
