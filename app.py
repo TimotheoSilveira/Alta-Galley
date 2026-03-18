@@ -354,15 +354,6 @@ if st.session_state.logged_in and can_edit():
     with tab2:
         st.markdown("## Adicionar Novo Touro")
 
-        st.info("⚠️ Para usar upload de fotos, você precisa de um **GitHub Token**. Veja abaixo como criar.")
-
-        # Input para GitHub Token
-        github_token = st.text_input(
-            "🔑 GitHub Token (opcional)",
-            type="password",
-            help="Deixe em branco para usar apenas URLs"
-        )
-
         with st.form("add_bull_form"):
             col1, col2 = st.columns(2)
 
@@ -376,54 +367,17 @@ if st.session_state.logged_in and can_edit():
                 description = st.text_area("Descrição genética")
 
             st.markdown("**Foto do Touro**")
-
-            col_url, col_upload = st.columns(2)
-
-            with col_url:
-                bull_image_url = st.text_input("URL da foto")
-
-            with col_upload:
-                bull_image_file = st.file_uploader("Ou upload da foto", type=["jpg", "jpeg", "png"], key="bull_photo")
+            bull_image_file = st.file_uploader("Upload da foto", type=["jpg", "jpeg", "png"], key="bull_photo")
 
             if st.form_submit_button("💾 Salvar Touro"):
                 if name and code:
                     bull_image = ""
 
-                    if bull_image_file and github_token:
-                        try:
-                            import base64
-                            import requests
-
-                            # Codificar foto em base64
-                            file_content = base64.b64encode(bull_image_file.getvalue()).decode()
-
-                            # Fazer upload no GitHub
-                            url = f"https://api.github.com/repos/TimotheoSilveira/Alta-Gallery/contents/fotos/{code}_bull.jpg"
-
-                            headers = {
-                                "Authorization": f"token {github_token}",
-                                "Content-Type": "application/json"
-                            }
-
-                            data = {
-                                "message": f"Adicionar foto do touro {code}",
-                                "content": file_content,
-                                "branch": "main"
-                            }
-
-                            response = requests.put(url, json=data, headers=headers)
-
-                            if response.status_code == 201:
-                                bull_image = f"https://raw.githubusercontent.com/TimotheoSilveira/Alta-Gallery/main/fotos/{code}_bull.jpg"
-                                st.success("✅ Foto enviada para GitHub!")
-                            else:
-                                st.error(f"❌ Erro ao enviar foto: {response.json()}")
-                                bull_image = bull_image_url
-                        except Exception as e:
-                            st.error(f"❌ Erro: {e}")
-                            bull_image = bull_image_url
-                    else:
-                        bull_image = bull_image_url
+                    if bull_image_file:
+                        filename = f"{code}_bull.jpg"
+                        bull_image = f"https://raw.githubusercontent.com/TimotheoSilveira/Alta-Gallery/main/fotos/{filename}"
+                        st.success(f"✅ Foto será salva em: `fotos/{filename}`")
+                        st.info("📤 **PRÓXIMO PASSO:** Fazer upload da foto no GitHub")
 
                     new_bull = {
                         "id": int(datetime.now().timestamp() * 1000),
@@ -443,21 +397,21 @@ if st.session_state.logged_in and can_edit():
                     st.error("❌ Preencha nome e código")
 
         st.divider()
-        st.markdown("### 🔑 Como criar um GitHub Token")
+        st.markdown("### 📤 Como fazer upload da foto no GitHub")
 
         with st.expander("📖 Ver instruções"):
             st.markdown("""
-            1. Acesse: https://github.com/settings/tokens
-            2. Clique em **"Generate new token"** → **"Generate new token (classic)"**
-            3. Preencha:
-               - **Note:** `Alta Gallery`
-               - **Expiration:** `No expiration`
-            4. Marque a permissão: **`repo`** (acesso completo ao repositório)
-            5. Clique em **"Generate token"**
-            6. **Copie o token** (aparece uma única vez!)
-            7. Cole no campo **"GitHub Token"** acima
+            **PASSO 1:** Quando você faz upload de uma foto aqui, ela é salva **temporariamente**
 
-            ⚠️ **IMPORTANTE:** Nunca compartilhe seu token com ninguém!
+            **PASSO 2:** Para deixar a foto **permanente**, você precisa fazer upload no GitHub:
+
+            1. Acesse seu repositório: https://github.com/TimotheoSilveira/Alta-Gallery
+            2. Clique na pasta **"fotos"**
+            3. Clique em **"Add file"** → **"Upload files"**
+            4. Selecione a foto do seu computador
+            5. Clique em **"Commit changes"**
+
+            **PASSO 3:** Pronto! A foto estará disponível para todos baixarem! ✅
             """)
 # ===== TAB 3: IMPORTAR =====
 if st.session_state.logged_in and can_edit():
