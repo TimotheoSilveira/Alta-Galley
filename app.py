@@ -3,10 +3,7 @@ import json
 import pandas as pd
 from datetime import datetime
 from pathlib import Path
-from google.oauth2.service_account import Credentials
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseUpload
-import io
+import os
 
 # ===== CONFIGURAÇÃO =====
 st.set_page_config(
@@ -16,12 +13,15 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# ===== CONFIGURAÇÃO GOOGLE DRIVE =====
-GOOGLE_DRIVE_FOLDER_ID = "1HV2Vx93Pwcljccm1mrMNtUyIuo8n8t-f"
+# ===== CONFIGURAÇÃO GITHUB =====
+GITHUB_USUARIO = "SEU_USUARIO"  # ← MUDE PARA SEU USUÁRIO
+GITHUB_REPO = "alta-gallery"
+GITHUB_BRANCH = "main"
+GITHUB_RAW_URL = f"https://raw.githubusercontent.com/{GITHUB_USUARIO}/{GITHUB_REPO}/{GITHUB_BRANCH}"
 
 BULLS_FILE = "bulls_data.json"
 USERS_FILE = "users_data.json"
-CREDENTIALS_FILE = "credentials.json"
+FOTOS_DIR = "fotos"
 
 # ===== DADOS INICIAIS =====
 initial_bulls = [
@@ -44,16 +44,6 @@ initial_bulls = [
         "description": "Destaque para sólidos, fertilidade e vacas funcionais.",
         "bullImage": "",
         "daughters": []
-    }
-]
-
-initial_users = [
-    {
-        "id": 1000,
-        "name": "Timotheo Admin",
-        "email": "timotheo@altagenetics.com",
-        "password": "admin123",
-        "role": "admin"
     }
 ]
 
@@ -83,6 +73,15 @@ def load_users():
         st.error(f"Erro ao carregar usuários: {e}")
 
     # Se não existir, criar com admin padrão
+    initial_users = [
+        {
+            "id": 1000,
+            "name": "Timotheo Admin",
+            "email": "timotheo@altagenetics.com",
+            "password": "admin123",
+            "role": "admin"
+        }
+    ]
     save_users_to_file(initial_users)
     return initial_users
 
@@ -96,61 +95,40 @@ def save_users_to_file(users):
 def save_users():
     save_users_to_file(st.session_state.users)
 
-# ===== FUNÇÕES GOOGLE DRIVE =====
-def get_google_drive_service():
-    try:
-        if not Path(CREDENTIALS_FILE).exists():
-            return None
+# ===== FUNÇÕES DE FOTOS =====
+def criar_pasta_fotos():
+    """Cria pasta de fotos se não existir"""
+    if not Path(FOTOS_DIR).exists():
+        Path(FOTOS_DIR).mkdir(parents=True, exist_ok=True)
 
-        credentials = Credentials.from_service_account_file(
-            CREDENTIALS_FILE,
-            scopes=['https://www.googleapis.com/auth/drive']
-        )
-        service = build('drive', 'v3', credentials=credentials)
-        return service
-    except Exception as e:
-        return None
+    if not Path(f"{FOTOS_DIR}/filhas").exists():
+        Path(f"{FOTOS_DIR}/filhas").mkdir(parents=True, exist_ok=True)
 
-def upload_to_google_drive(file_bytes, filename):
-    try:
-        service = get_google_drive_service()
-        if not service:
-            return None
+def salvar_foto_localmente(file_uploader, tipo, codigo):
+    """Salva foto localmente e retorna o caminho"""
+    criar_pasta_fotos()
 
-        file_metadata = {
-            'name': filename,
-            'parents': [GOOGLE_DRIVE_FOLDER_ID]
-        }
+    if tipo == "bull":
+        filename = f"{codigo}_bull.jpg"
+        filepath = f"{FOTOS_DIR}/{filename}"
+    else:
+        filename = f"{codigo}_{datetime.now().timestamp()}.jpg"
+        filepath = f"{FOTOS_DIR}/filhas/{filename}"
 
-        media = MediaIoBaseUpload(
-            io.BytesIO(file_bytes),
-            mimetype='image/jpeg',
-            resumable=True
-        )
+    # Salvar arquivo
+    with open(filepath, "wb") as f:
+        f.write(file_uploader.getvalue())
 
-        file = service.files().create(
-            body=file_metadata,
-            media_body=media,
-            fields='id, webViewLink'
-        ).execute()
+    return filepath, filename
 
-        file_id = file.get('id')
-
-        service.permissions().create(
-            fileId=file_id,
-            body={'type': 'anyone', 'role': 'reader'}
-        ).execute()
-
-        return f"https://drive.google.com/uc?id={file_id}&export=download"
-
-    except Exception as e:
-        return None
+def gerar_url_github(filepath):
+    """Gera URL do GitHub para a foto"""
+    # Converter caminho local para URL GitHub
+    filepath_github = filepath.replace("\\", "/")
+    return f"{GITHUB_RAW_URL}/{filepath_github}"
 
 # ===== INICIALIZAR SESSION STATE =====
-
-# Carregar ou criar usuários
 if not Path(USERS_FILE).exists():
-    # Se não existir, criar com admin padrão
     initial_users = [
         {
             "id": 1000,
@@ -166,7 +144,6 @@ if not Path(USERS_FILE).exists():
 else:
     st.session_state.users = load_users()
 
-# Carregar touros
 if "bulls" not in st.session_state:
     st.session_state.bulls = load_bulls()
 
@@ -294,7 +271,10 @@ with tab1:
 
                 with col1:
                     if bull.get("bullImage"):
-                        st.image(bull["bullImage"], use_container_width=True)
+                        try:
+                            st.image(bull["bullImage"], use_container_width=True)
+                        except:
+                            st.info("❌ Foto não encontrada")
                     else:
                         st.info("Sem foto")
 
@@ -345,7 +325,10 @@ with tab1:
                     for idx, photo in enumerate(bull["daughters"]):
                         with cols[idx % 3]:
                             if photo.get("image"):
-                                st.image(photo["image"], use_container_width=True)
+                                try:
+                                    st.image(photo["image"], use_container_width=True)
+                                except:
+                                    st.info("❌ Foto não encontrada")
                             st.markdown(f"**{photo['cowName']}**")
                             st.markdown(f"🏠 {photo['farm']}")
                             st.markdown(f"📍 {photo['location']}")
@@ -355,12 +338,7 @@ with tab1:
                             col_download, col_delete = st.columns(2)
                             with col_download:
                                 if photo.get("image"):
-                                    st.download_button(
-                                        "📥 Baixar",
-                                        data=photo["image"],
-                                        file_name=f"{photo['cowName']}.jpg",
-                                        key=f"download_{photo['id']}"
-                                    )
+                                    st.markdown(f"[📥 Baixar]({photo['image']})")
                             if can_edit():
                                 with col_delete:
                                     if st.button("🗑️", key=f"delete_photo_{photo['id']}"):
@@ -389,6 +367,7 @@ if st.session_state.logged_in and can_edit():
                 description = st.text_area("Descrição genética")
 
             st.markdown("**Foto do Touro**")
+
             col_url, col_upload = st.columns(2)
 
             with col_url:
@@ -402,12 +381,13 @@ if st.session_state.logged_in and can_edit():
                     bull_image = ""
 
                     if bull_image_file:
-                        st.info("Fazendo upload para Google Drive...")
-                        bull_image = upload_to_google_drive(
-                            bull_image_file.getvalue(),
-                            f"{code}_bull.jpg"
-                        )
-                        if not bull_image:
+                        try:
+                            filepath, filename = salvar_foto_localmente(bull_image_file, "bull", code)
+                            bull_image = gerar_url_github(filepath)
+                            st.success(f"✅ Foto salva em: `{filepath}`")
+                            st.info("📤 Lembre-se de fazer commit e push no GitHub!")
+                        except Exception as e:
+                            st.error(f"Erro ao salvar foto: {e}")
                             bull_image = bull_image_url
                     else:
                         bull_image = bull_image_url
@@ -424,10 +404,10 @@ if st.session_state.logged_in and can_edit():
                     }
                     st.session_state.bulls.insert(0, new_bull)
                     save_bulls()
-                    st.success("Touro adicionado!")
+                    st.success("✅ Touro adicionado com sucesso!")
                     st.rerun()
                 else:
-                    st.error("Preencha nome e código")
+                    st.error("❌ Preencha nome e código")
 
 # ===== TAB 3: IMPORTAR =====
 if st.session_state.logged_in and can_edit():
@@ -571,3 +551,23 @@ if st.session_state.logged_in and can_manage_users():
         with col3:
             admins = len([u for u in st.session_state.users if u["role"] == "admin"])
             st.metric("Admins", admins)
+
+        st.divider()
+        st.markdown("### 📤 Instruções para GitHub")
+
+        st.info("""
+        **Para fazer upload das fotos no GitHub:**
+
+        1. Abra o terminal na pasta do projeto
+        2. Execute:
+        ```bash
+        git add .
+        git commit -m "Adicionar fotos de touros"
+        git push origin main
+        ```
+
+        3. As fotos estarão disponíveis em:
+        ```
+        https://raw.githubusercontent.com/SEU_USUARIO/alta-gallery/main/fotos/
+        ```
+        """)
