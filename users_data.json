@@ -3,7 +3,7 @@
     "id": 1000,
     "name": "Timotheo Admin",
     "email": "timotheo@altagenetics.com",
-    "password": "sua_senha_aqui",
+    "password": "admin123",
     "role": "admin"
   }
 ]
