@@ -3,7 +3,6 @@ import json
 import pandas as pd
 from datetime import datetime
 from pathlib import Path
-import os
 
 # ===== CONFIGURAÇÃO =====
 st.set_page_config(
