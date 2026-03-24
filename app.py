@@ -3,11 +3,16 @@ import json
 import base64
 from pathlib import Path
 from datetime import datetime
+import io
 import os
-from google.oauth2.service_account import Credentials
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload
-import gdown
+
+try:
+    from google.oauth2.service_account import Credentials
+    from googleapiclient.discovery import build
+    from googleapiclient.http import MediaIoBaseUpload
+    GOOGLE_DRIVE_AVAILABLE = True
+except ImportError:
+    GOOGLE_DRIVE_AVAILABLE = False
 
 # ============================================================================
 # CONFIGURAÇÃO
@@ -21,7 +26,8 @@ st.set_page_config(
 )
 
 # CONFIGURAÇÃO DO GOOGLE DRIVE
-GOOGLE_DRIVE_FOLDER_ID = "1234567890abcdefg"  # SUBSTITUA PELO SEU ID
+GOOGLE_DRIVE_FOLDER_ID = "1A2B3C4D5E6F7G8H9I0J1K2L3M4N5O6P7"  # SUBSTITUA PELO SEU ID
+CREDENTIALS_FILE = "credentials.json"
 SCOPES = ['https://www.googleapis.com/auth/drive']
 
 # ============================================================================
@@ -90,41 +96,89 @@ if "bulls" not in st.session_state:
     st.session_state.breedFilter = "Todas as raças"
     st.session_state.selectedBullId = None
     st.session_state.previewPhoto = None
-    st.session_state.showAddBull = False
-    st.session_state.showAddPhoto = False
 
 # ============================================================================
 # FUNÇÕES DO GOOGLE DRIVE
 # ============================================================================
 
+@st.cache_resource
 def get_drive_service():
-    """Retorna serviço do Google Drive (sem autenticação para leitura pública)"""
-    try:
-        # Para leitura pública, usamos gdown que não precisa de autenticação
-        return True
-    except:
-        return False
+    """Retorna serviço autenticado do Google Drive"""
+    if not GOOGLE_DRIVE_AVAILABLE:
+        return None
 
-def upload_to_google_drive(file_content, filename, folder_id=GOOGLE_DRIVE_FOLDER_ID):
-    """
-    Faz upload de arquivo para Google Drive
-    Requer arquivo de credenciais JSON (service account)
-    """
-    try:
-        # Se você tiver um arquivo credentials.json, descomente:
-        # credentials = Credentials.from_service_account_file('credentials.json', scopes=SCOPES)
-        # service = build('drive', 'v3', credentials=credentials)
+    if not Path(CREDENTIALS_FILE).exists():
+        return None
 
-        # Por enquanto, retorna URL base64 (alternativa simples)
-        file_base64 = base64.b64encode(file_content).decode()
-        return f"data:image/png;base64,{file_base64}"
+    try:
+        credentials = Credentials.from_service_account_file(
+            CREDENTIALS_FILE,
+            scopes=SCOPES
+        )
+        service = build('drive', 'v3', credentials=credentials)
+        return service
+    except Exception as e:
+        st.error(f"Erro ao conectar com Google Drive: {str(e)}")
+        return None
+
+def upload_photo_to_google_drive(file_content, filename, folder_id=GOOGLE_DRIVE_FOLDER_ID):
+    """Faz upload de foto para Google Drive e retorna a URL pública"""
+    service = get_drive_service()
+
+    if not service:
+        st.error("Google Drive não configurado. Verifique credentials.json")
+        return None
+
+    try:
+        # Metadados do arquivo
+        file_metadata = {
+            'name': filename,
+            'parents': [folder_id],
+            'mimeType': 'image/jpeg'
+        }
+
+        # Fazer upload
+        media = MediaIoBaseUpload(
+            io.BytesIO(file_content),
+            mimetype='image/jpeg',
+            resumable=True
+        )
+
+        file = service.files().create(
+            body=file_metadata,
+            media_body=media,
+            fields='id'
+        ).execute()
+
+        file_id = file.get('id')
+
+        # Tornar arquivo público
+        try:
+            service.permissions().create(
+                fileId=file_id,
+                body={'type': 'anyone', 'role': 'reader'}
+            ).execute()
+        except:
+            pass  # Se falhar, tenta acessar mesmo assim
+
+        # Retornar URL pública
+        return f"https://drive.google.com/uc?export=view&id={file_id}"
+
     except Exception as e:
         st.error(f"Erro ao fazer upload: {str(e)}")
         return None
 
-def get_google_drive_image_url(file_id):
-    """Retorna URL pública do Google Drive para uma imagem"""
-    return f"https://drive.google.com/uc?export=view&id={file_id}"
+def test_google_drive_connection():
+    """Testa conexão com Google Drive"""
+    service = get_drive_service()
+    if not service:
+        return False
+
+    try:
+        service.files().list(spaces='drive', pageSize=1).execute()
+        return True
+    except:
+        return False
 
 # ============================================================================
 # FUNÇÕES DE ARMAZENAMENTO LOCAL
@@ -332,6 +386,14 @@ with st.sidebar:
 
     st.divider()
 
-    st.markdown("### 🔧 Configuração Google Drive")
+    st.markdown("### 🔧 Google Drive")
+    if GOOGLE_DRIVE_AVAILABLE:
+        if test_google_drive_connection():
+            st.success("✅ Google Drive conectado")
+        else:
+            st.warning("⚠️ Google Drive não configurado")
+    else:
+        st.warning("⚠️ Bibliotecas do Google não instaladas")
+
     st.markdown(f"**ID da Pasta:** `{GOOGLE_DRIVE_FOLDER_ID}`")
-    st.markdown("[Abrir Google Drive](https://drive.google.com/drive/folders/{}?usp=sharing)".format(GOOGLE_DRIVE_FOLDER_ID))
+    st.markdown(f"[Abrir Google Drive](https://drive.google.com/drive/folders/{GOOGLE_DRIVE_FOLDER_ID}?usp=sharing)")
