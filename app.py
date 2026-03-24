@@ -1,6 +1,13 @@
 import streamlit as st
 import json
+import base64
 from pathlib import Path
+from datetime import datetime
+import os
+from google.oauth2.service_account import Credentials
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaFileUpload
+import gdown
 
 # ============================================================================
 # CONFIGURAÇÃO
@@ -12,6 +19,10 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+# CONFIGURAÇÃO DO GOOGLE DRIVE
+GOOGLE_DRIVE_FOLDER_ID = "1234567890abcdefg"  # SUBSTITUA PELO SEU ID
+SCOPES = ['https://www.googleapis.com/auth/drive']
 
 # ============================================================================
 # DADOS INICIAIS
@@ -79,9 +90,44 @@ if "bulls" not in st.session_state:
     st.session_state.breedFilter = "Todas as raças"
     st.session_state.selectedBullId = None
     st.session_state.previewPhoto = None
+    st.session_state.showAddBull = False
+    st.session_state.showAddPhoto = False
 
 # ============================================================================
-# FUNÇÕES DE ARMAZENAMENTO
+# FUNÇÕES DO GOOGLE DRIVE
+# ============================================================================
+
+def get_drive_service():
+    """Retorna serviço do Google Drive (sem autenticação para leitura pública)"""
+    try:
+        # Para leitura pública, usamos gdown que não precisa de autenticação
+        return True
+    except:
+        return False
+
+def upload_to_google_drive(file_content, filename, folder_id=GOOGLE_DRIVE_FOLDER_ID):
+    """
+    Faz upload de arquivo para Google Drive
+    Requer arquivo de credenciais JSON (service account)
+    """
+    try:
+        # Se você tiver um arquivo credentials.json, descomente:
+        # credentials = Credentials.from_service_account_file('credentials.json', scopes=SCOPES)
+        # service = build('drive', 'v3', credentials=credentials)
+
+        # Por enquanto, retorna URL base64 (alternativa simples)
+        file_base64 = base64.b64encode(file_content).decode()
+        return f"data:image/png;base64,{file_base64}"
+    except Exception as e:
+        st.error(f"Erro ao fazer upload: {str(e)}")
+        return None
+
+def get_google_drive_image_url(file_id):
+    """Retorna URL pública do Google Drive para uma imagem"""
+    return f"https://drive.google.com/uc?export=view&id={file_id}"
+
+# ============================================================================
+# FUNÇÕES DE ARMAZENAMENTO LOCAL
 # ============================================================================
 
 def load_bulls():
@@ -89,6 +135,10 @@ def load_bulls():
         with open("bulls_data.json", "r", encoding="utf-8") as f:
             return json.load(f)
     return INITIAL_BULLS.copy()
+
+def save_bulls():
+    with open("bulls_data.json", "w", encoding="utf-8") as f:
+        json.dump(st.session_state.bulls, f, indent=2, ensure_ascii=False)
 
 # ============================================================================
 # FUNÇÕES AUXILIARES
@@ -269,3 +319,19 @@ if st.session_state.previewPhoto:
     if st.button("Fechar visualização"):
         st.session_state.previewPhoto = None
         st.rerun()
+
+# ============================================================================
+# SIDEBAR - INFORMAÇÕES
+# ============================================================================
+
+with st.sidebar:
+    st.markdown("### 📋 Informações")
+    st.markdown(f"**Total de touros:** {len(st.session_state.bulls)}")
+    st.markdown(f"**Total de fotos:** {total_photos}")
+    st.markdown(f"**Raças cadastradas:** {breeds_count}")
+
+    st.divider()
+
+    st.markdown("### 🔧 Configuração Google Drive")
+    st.markdown(f"**ID da Pasta:** `{GOOGLE_DRIVE_FOLDER_ID}`")
+    st.markdown("[Abrir Google Drive](https://drive.google.com/drive/folders/{}?usp=sharing)".format(GOOGLE_DRIVE_FOLDER_ID))
